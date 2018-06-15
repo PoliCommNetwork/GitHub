@@ -1,0 +1,688 @@
+---
+title: "Data analysis"
+output:
+  pdf_document:
+    latex_engine: xelatex
+    number_sections: yes
+    toc: yes
+    toc_depth: 3
+  word_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+\newpage
+
+# Data analysis
+
+```{r loadLibs, echo=FALSE, message=FALSE, results="hide"}
+library("knitr")
+library("descr")
+library("lme4")
+library("moments")
+library("vioplot")
+library("stargazer")
+library("xtable")
+opts_chunk$set(echo=FALSE, fig.height=3, results="asis", dev="pdf", dev.args=list(pointsize = 9))
+Fmt <- function(x)
+{
+    if(x < 10)
+        sprintf("%0.2f", x)
+    else
+        if(x < 1000)
+            sprintf("%0.1f", x)
+        else
+            format(x, big.mark=",")
+}
+```
+
+```{r loadData, cache=FALSE}
+load("Facebook.RData")
+```
+
+## About the Data
+
+Our sample was gathered by setting the “Page Data” module of the Facebook
+mining application Netvizz to deliver all the news units posted by
+`r length(levels(d$page.name))` news fanpages from 13 countries or region
+(Angola, Australia, Brazil, Canada, China, India, Ireland, Middle East,
+Nigeria, Portugal, United States of America, United Kingdom and South Africa)
+between April 11th, 2016 and October 10th, 2016. We deleted `r Fmt(sum(pdel))`
+posts that were events, musics, statuses and notes because these types were
+too infrequent to be analyzed (only `r Fmt(100*sum(pdel)/(sum(pdel) +
+sum(!pdel)))`% of the total), remaining `r Fmt(nrow(d))` posts in the dataset.
+
+## Dependent variable
+
+The share count has a distribution close to log-normal. The skewness of
+share count is `r Fmt(skewness(d$shares_count_fb))` while its logarithm's skewness
+is `r Fmt(skewness(d$logshare))` (Figure 1).
+
+```{r histdep, cache=TRUE, fig.height=2.5, fig.width=6, fig.cap="Histograms of share count"}
+par(mfrow = c(1, 2), mar = c(4, 4, 1, 2)+0.1)
+hist(d$shares_count_fb, col = "lightgray", main = "", xlab = "Share count")
+hist(d$logshare, col = "lightgray", main = "", xlab = "Logarithm of share count")
+```
+
+## Independent variable: number of followers
+
+The like count (number of followers) variation of each news fan page was
+measured between April 11th, 2016 and September 26th, 2016. This metric was
+provided by SocialBakers’ “Facebook Fan Overview”, which shows the last six
+months of a fan page like count variation and measures this count once every
+fourteen days. In many analyzes, we aggregate our data by combinations of the
+`r length(levels(d$page.name))` pages and `r length(table(d$fortnightA))`
+fortnight intervals, resulting in `r Fmt(nrow(a))` aggregates.\footnote{The number
+of aggregates should be 1287, but some pages did not post any news on some
+fortnights, as collected by Netvizz.} Figure 2 illustrates how the fortnight
+intervals were calculated. In almost all analyzes in this paper, we aggregate
+the data in fortnights that begin after the day with known number of followers
+and end on the next day with known number of followers because the number of
+followers is hypothesized to be one of the variables with a significant effect
+on the share count of posts. Only when test the direction of causality between
+number of followers and share count we use the fortnights calculated after the
+known number of followers.
+
+```{r fortexpl, cache=TRUE, fig.height=2.0, fig.width=5, fig.cap="Fortnight explained"}
+par(mar = c(0, 0, 0, 0))
+plot(NULL, xaxt="n", bty="n", yaxt ="n", xlim=c(-1, 31), ylim = c(-4, 2.3), xlab = "", ylab="")
+rect(1,  0,  2, 1, col = "black")
+rect(15, 0, 16, 1, col = "black")
+rect(29, 0, 30, 1, col = "black")
+for(i in 1:29)
+    rect(i, 0, i+1, 1)
+rect(1,   1.2, 15,  2.2, col = "lightgray") 
+rect(15,  1.2, 29,  2.2, col = "lightgray") 
+rect(2,  -0.2, 16, -1.2, col = "darkgray") 
+rect(16, -0.2, 30, -1.2, col = "darkgray") 
+legend("bottomleft", fill = c("black", "lightgray", "darkgray"), bty = "n",
+       legend = c("Day with known number of followers",
+                  "Fortnight before",
+                  "Fortnight after"))
+rm(i)
+```
+
+\clearpage
+
+The number of followers ranges from `r Fmt(min(d$nflwrsI, na.rm=TRUE))`
+(*`r as.character(d$page.name[!is.na(d$nflwrsI) & d$nflwrsI == min(d$nflwrsI, na.rm=TRUE)][1])`*,
+fortnight
+`r as.character(d$fortnightA[!is.na(d$nflwrsI) & d$nflwrsI == min(d$nflwrsI, na.rm=TRUE)][1])`)
+to `r Fmt(max(d$nflwrsI, na.rm=TRUE))`
+(*`r as.character(d$page.name[!is.na(d$nflwrsI) & d$nflwrsI == max(d$nflwrsI, na.rm=TRUE)][1])`*,
+fortnight
+`r as.character(d$fortnightA[!is.na(d$nflwrsI) & d$nflwrsI == max(d$nflwrsI, na.rm=TRUE)][1])`).
+As Figure 3 shows, the number of followers distribution is more skewed to the
+right (skewness = `r Fmt(skewness(d$nflwrsI, na.rm = TRUE))`) than its
+logarithm is to the left (skewness = `r Fmt(skewness(d$logNflwrsI, na.rm = TRUE))`).
+For this reason, we opted for using the logarithm of the number of followers
+in our analyzes.
+
+```{r nflwrs, cache=TRUE, fig.height=2.5, fig.width=6, fig.cap="Histograms of number of followers"}
+options(scipen = 9)
+par(mfrow = c(1, 2), mar = c(4, 4, 1, 2)+0.1)
+hist(a$nflwrsI, col = "lightgray", xlab = "Number of followers", main = "")
+hist(a$logNflwrsI, col = "lightgray", xlab = "Log of number of followers", main = "")
+```
+
+### Correlation between dependent and independent variables
+
+Figure 4 shows the correlation between the logarithm of the page's number of
+followers on each fortnight and the mean value of the logarithm of share
+count.
+
+```{r logshareXnflwrs, cache=TRUE, fig.height=2.5, fig.width=4, fig.cap="Correlation between share count and number of followers"}
+par(mar=c(4,4,0,2)+0.1)
+plot(a$logshare ~ a$logNflwrsI, col = "#00000044",
+     xlab = "Log of number of followers",
+     ylab = "Mean log of share count")
+text(11, 7, paste("r =", Fmt(cor(a$logshare, a$logNflwrsI))))
+abline(lm(a$logshare ~ a$logNflwrsI))
+```
+
+\clearpage
+
+## Control variables
+
+### Number of posts per page per fortnight
+
+```{r lognpost, cache=TRUE}
+a$lognpost <- log(a$npost)
+```
+
+The number of posts per page per fortnight ranges from
+`r min(d$npostA, na.rm=TRUE)`
+(*`r as.character(d$page.name[!is.na(d$npostA) & d$npostA == min(d$npostA, na.rm=TRUE)][1])`*,
+fortnight
+`r as.character(d$fortnightA[!is.na(d$npostA) & d$npostA == min(d$npostA, na.rm=TRUE)][1])`)
+to
+`r Fmt(max(d$npostA, na.rm=TRUE))`
+(*`r as.character(d$page.name[!is.na(d$npostA) & d$npostA == max(d$npostA, na.rm=TRUE)][1])`*,
+fortnight
+`r as.character(d$fortnightA[!is.na(d$npostA) & d$npostA == max(d$npostA, na.rm=TRUE)][1])`).
+As the number of followers and the share count, its logarithm is closer to a
+normal distribution (skewness = `r Fmt(skewness(a$lognpost))`) than the
+distribution of its untransformed values is (skewness = `r Fmt(skewness(a$npost))`).
+
+Before turning to the relationship between number of posts and share count, we
+should mention that there is a positive correlation between the logarithm of
+the number of followers and the number of posts; pages with higher number of
+followers also post more frequently
+(r = `r Fmt(cor(a$logNflwrsI, a$lognpost))`).
+
+On the one hand, it is expected that the more a page posts the more attention
+it will get and, consequently, the higher its total share count will be. This
+expectation is confirmed by the positive and relatively high correlation
+between the sum of the logarithm of share count per page--fortnight and the
+number of followers (Figure 5a). On the other hand, it seems that Facebook
+does not increase post delivery to users if the page increases its daily
+number of posts. If two pages have the same number of followers, the page
+which posts more frequently will have each of its posts delivered for a
+smaller number of users, and, consequently, each post will have a lower
+probability of being shared. This other expectation is also confirmed by the
+data: the average share count decreases as the number of posts increases
+(Figure 5b).
+
+```{r npostXshare, cache=TRUE, fig.height=5, fig.cap="Share count and number of posts"}
+par(mfrow=c(2, 2), mar=c(6, 4, 0.5, 2)+0.1)
+plot(a$logShareSum ~ a$lognpost, col = "#00000033",
+     ylab = "Log of sum of share count",
+     xlab = "Log of number of posts", sub = "(a)")
+x <- min(a$lognpost) + ((max(a$lognpost) - min(a$lognpost)) / 10)
+y <- max(a$logShareSum) - ((max(a$logShareSum) - min(a$logShareSum)) / 10)
+text(x, y, paste("r =", Fmt(cor(a$logShareSum, a$lognpost))))
+abline(lm(logShareSum ~ lognpost, data = a))
+par(mar=c(6, 6, 0.5, 0)+0.1)
+plot(a$logshare ~ a$lognpost, col = "#00000033",
+     ylab = "Mean of log of share count",
+     xlab = "Log of number of posts", sub = "(b)")
+y <- max(a$logshare) - ((max(a$logshare) - min(a$logshare)) / 10)
+text(x, y, paste("r =", Fmt(cor(a$logshare, a$lognpost))))
+abline(lm(logshare ~ lognpost, data = a))
+par(mar=c(5, 4, 1.5, 2)+0.1)
+plot(a$logShareSum ~ a$logNflwrPost, col = "#00000066", sub = "(c)",
+     xlab = "Log of NF/NP",
+     ylab = "Log of sum of share count")
+text(min(a$logNflwrPost) + ((max(a$logNflwrPost) - min(a$logNflwrPost)) / 10),
+     max(a$logShareSum) - ((max(a$logShareSum) - min(a$logShareSum)) / 10),
+     paste("r =", Fmt(cor(a$logShareSum, a$logNflwrPost))))
+abline(lm(a$logShareSum ~ a$logNflwrPost))
+par(mar=c(5, 6, 1.5, 0)+0.1)
+plot(a$logshare ~ a$logNflwrPost, col = "#00000066", sub = "(d)",
+     xlab = "Log of NF/NP",
+     ylab = "Mean log of share count")
+text(min(a$logNflwrPost) + ((max(a$logNflwrPost) - min(a$logNflwrPost)) / 10),
+     max(a$logshare) - ((max(a$logshare) - min(a$logshare)) / 10),
+     paste("r =", Fmt(cor(a$logshare, a$logNflwrPost))))
+abline(lm(a$logshare ~ a$logNflwrPost))
+```
+
+Continuing this line of reasoning that more posts draw more attention from
+page fans, but, at the same, the attention of fans is split among posts, we
+have to consider that what matters the most for the probability of a post
+being shared is not the number of posts nor the number of followers, but the
+ratio of number of followers to number of posts (NF/NP). The higher this
+ratio, the higher should be the average share count of posts. Figures 5c and
+5d show the correlations between NF/NP and two different aggregates of share
+count. As expected, the ratio NF/NP explains better the average logarithm of
+share count (Figure 5d) than the logarithm of the sum of share count (Figure
+5c).
+
+The relationship between the average logarithm of share count and the
+logarithm of the number of posts is not linear. We can note in figure 5a and
+5b that the share count peaks when the number of posts is around 440
+(logarithm 6.09). However, we cannot see the same peaks in figures 5c and 5d.
+This means that as the number of posts increases from 1 to around 440, the
+increase in the number of followers is more relevant, resulting in an
+unexpected (and spurious) positive correlation between share count and number
+of posts. After the 440 threshold, the effect of additional followers become
+less relevant and the correlation becomes negative, as expected.
+
+TESTE EMPIRICISTA PARA DESCOBRIR O NUMERO IDEAL DE POSTAGENS, COMO FEITO PARA
+NCHAR, INDICA QUE NAO EXISTE NÚMERO IDEAL DE POSTAGENS. QUANTO MAIOR O NÚMERO
+DE POSTAGENS, MENOR O NÚMERO DE COMPARTILHAMENTOS.
+
+```{r npostFind, eval=FALSE, cache=TRUE}
+RunRegression <- function(v)
+{
+    x <- v - a$npost
+    x[x > 0] <-  -1 * x[x > 0]
+    print(summary(lm(logshare ~ x + logNflwrsI, data = a)))
+}
+RunRegression(0)
+RunRegression(1)
+RunRegression(10)
+RunRegression(25)
+RunRegression(50)
+RunRegression(100)
+RunRegression(200)
+RunRegression(300)
+RunRegression(400)
+RunRegression(500)
+RunRegression(700)
+```
+
+Before proceeding, we have to test the direction of the causal relationship
+between share count and number of followers. Table 1 shows regression models
+where the dependent variables are the fortnight mean value of the logarithm of
+share count (MLS), the logarithm of the fortnight sum of share count (LSS),
+and the logarithm of the number of followers (NF). In each model, the value of
+the dependent variable in the previous fortnight is added as a control
+variable. Comparing models 1 and 2, we can see that the logarithm of the
+number of followers does not have an independent contribution to the mean
+value of the logarithm of share count while the inverse is true. That is, an
+increase in the number of followers does not cause an increase the average
+share count while an increase in the average share count does cause an
+increase in the number of followers. Comparing models 3 and 4, we can see a
+different picture. A page's total share count causes an increase in the number
+of followers, but the number of followers also causes an increase in the total
+share count.
+
+```{r Causality1, cache=TRUE}
+a2 <- a[, c("page.name", "fortnightA", "logshare", "logShareSum", "logNflwrsI", "logNflwrPost")]
+b2 <- b[, c("page.name", "fortnightB", "logshare", "logShareSum", "logNflwrsD", "logNflwrPost")]
+a2 <- a2[order(a2$page.name, a2$fortnightA), ]
+b2 <- b2[order(b2$page.name, b2$fortnightB), ]
+
+a2$logshare.b <- NA
+a2$logShareSum.b <- NA
+a2$logNflwrPost.b <- NA
+for(i in levels(factor(a2$page.name)))
+    for(j in 2:13){
+        lsB <- a2$logshare[a2$page.name == i & a2$fortnightA == (j-1)]
+        if(length(lsB))
+            a2$logshare.b[a2$page.name == i & a2$fortnightA == j] <- lsB
+        lsB <- a2$logShareSum[a2$page.name == i & a2$fortnightA == (j-1)]
+        if(length(lsB))
+            a2$logShareSum.b[a2$page.name == i & a2$fortnightA == j] <- lsB
+        lsB <- a2$logNflwrPost[a2$page.name == i & a2$fortnightA == (j-1)]
+        if(length(lsB))
+            a2$logNflwrPost.b[a2$page.name == i & a2$fortnightA == j] <- lsB
+}
+
+b2$logNflwrsD.b <- NA
+b2$logNflwrPost.b <- NA
+for(i in levels(factor(b2$page.name)))
+    for(j in 2:12){
+        lsB <- b2$logNflwrsD[b2$page.name == i & b2$fortnightB == (j-1)]
+        if(length(lsB))
+            b2$logNflwrsD.b[b2$page.name == i & b2$fortnightB == j] <- lsB
+        lsB <- b2$logNflwrPost[b2$page.name == i & b2$fortnightB == (j-1)]
+        if(length(lsB))
+            b2$logNflwrPost.b[b2$page.name == i & b2$fortnightB == j] <- lsB
+}
+
+ms <- lm(logshare ~ logshare.b + logNflwrsI, data = a2)
+mf <- lm(logNflwrsD ~ logNflwrsD.b + logshare, data = b2)
+ss <- lm(logShareSum ~ logShareSum.b + logNflwrsI, data = a2)
+sf <- lm(logNflwrsD ~ logNflwrsD.b + logShareSum, data = b2)
+
+SubNames <- function(x)
+{
+    x <- sub("logNflwrsD.b", "Log of number of followers (lag)", x)
+    x <- sub("logShareSum.b", "Log of share count sum (lag)", x)
+    x <- sub("logshare.b", "Mean log of share count (lag)", x)
+    x <- sub("logshare", "Mean log of share count", x)
+    x <- sub("logNflwrsD", "Log of number of followers", x)
+    x <- sub("logNflwrsI", "Log of number of followers", x)
+    x <- sub("logShareSum", "Log of share count sum", x)
+    x
+}
+names(ms$coefficients) <- SubNames(names(ms$coefficients))
+names(mf$coefficients) <- SubNames(names(mf$coefficients))
+names(ss$coefficients) <- SubNames(names(ss$coefficients))
+names(sf$coefficients) <- SubNames(names(sf$coefficients))
+
+stargazer(ms, mf, ss, sf, title = "Test of causal relationship direction (I)",
+          dep.var.labels = c("MLS", "NF", "LSS", "NF"),
+          omit.stat=c("f", "ser"))
+rm(lsB, i, j, ms, mf, ss, sf, SubNames)
+```
+
+We interpret these results as meaning that the number of followers does imply
+in higher share count, but the total share count will be distributed through
+all posts.
+
+\clearpage
+
+Table 2 shows the results the causal relationship direction, now with the
+ratio NF/NP. An increase in the number of followers (which is part of NF/NP)
+causes an increase in the share count (Model 1) and the logarithm of share
+count also causes an increase in the number of followers (Model 2). However,
+although NF/NP causes an increase in the total share count (Model 3), the
+total share count does not causes an increase in the ratio NF/NP (Model 4).
+
+In summary, when a page increases its number of followers it increases its
+total share count; when a page increases its ratio of number of followers to
+number of posts, it increases the share count of individual posts; when a page
+produces posts of high quality, which get highly shared, it attracts new
+followers.
+
+```{r Causality2, cache=TRUE}
+ms <- lm(logshare     ~ logshare.b     + logNflwrPost, data = a2)
+mf <- lm(logNflwrPost ~ logNflwrPost.b + logshare, data = b2)
+ss <- lm(logShareSum  ~ logShareSum.b  + logNflwrPost, data = a2)
+sf <- lm(logNflwrPost ~ logNflwrPost.b + logShareSum, data = b2)
+
+SubNames <- function(x)
+{
+    x <- sub("logShareSum.b", "Log of share count sum (lag)", x)
+    x <- sub("logshare.b", "Mean log of share count (lag)", x)
+    x <- sub("logshare", "Mean log of share count", x)
+    x <- sub("logShareSum", "Log of share count sum", x)
+    x <- sub("logNflwrPost.b", "Log of number of followers/post (lag)", x)
+    x <- sub("logNflwrPost", "Log of number of followers/post", x)
+    x
+}
+names(ms$coefficients) <- SubNames(names(ms$coefficients))
+names(mf$coefficients) <- SubNames(names(mf$coefficients))
+names(ss$coefficients) <- SubNames(names(ss$coefficients))
+names(sf$coefficients) <- SubNames(names(sf$coefficients))
+
+stargazer(ms, mf, ss, sf, title = "Test of causal relationship direction (II)",
+          dep.var.labels = c("MLS", "NF/NP", "LSS", "NF/NP"),
+          omit.stat=c("f", "ser"))
+rm(a2, b2, ms, mf, ss, sf, SubNames)
+```
+
+\clearpage
+
+### Regularity of daily posting
+
+We hypothesize that the regularity in the daily number of posts helps to keep
+the fidelity of followers and, consequently, increase the share count. We used
+the ratio of the standard deviation of the daily number of posts to the
+average number of posts as an indicator of irregularity. Then, we inverted it
+by subtracting its maximum value from each value, obtaining an indicator of
+regularity in the number of daily posting. The correlation between the
+logarithm of share count (aggregated by page) and the regularity of posting is
+`r Fmt(cor(pa$logshare, pa$npost.reg))`.
+
+### Type of post
+
+The posts analyzed here are videos, photos, and links. The most frequent are
+links (`r Fmt(sum(d$type == "link"))`), followed by videos
+(`r Fmt(sum(d$type == "video"))`) and photos (`r Fmt(sum(d$type == "photo"))`).
+Figure 6 shows violin plots of the logarithm of share count according to
+the type of post. Violin plots combine features of box plots and density
+plots, and it is notable that videos are the most shared type of post. The
+median value of the logarithm of share count is
+`r Fmt(median(d$logshare[d$type == "link"]))` for links,
+`r Fmt(median(d$logshare[d$type == "photo"]))` for photos, and
+`r Fmt(median(d$logshare[d$type == "video"]))` for videos.
+
+
+```{r typeViolin, cache=TRUE, fig.height=2, fig.width=4, fig.cap = "Violin plots of the logarithm of share count according to type of post"}
+par(mar=c(2, 2, 0.5, 0)+0.1)
+vioplot(d$logshare[d$type == "link"],
+        d$logshare[d$type == "photo"],
+        d$logshare[d$type == "video"],
+        names = c("Link", "Photo", "Video"),
+        col = "lightgray")
+```
+
+### Length of post message
+
+We deleted from post messages URL strings and expressions such as *via...*,
+*shared...* and others that were added by Facebook. Then, we used as indicator
+of a post length its number of characters (minimum = `r min(d$nchar)`, mean =
+`r round(mean(d$nchar))` and maximum = `r max(d$nchar)`). The correlation
+between LSC and number of characters is `r Fmt(cor(d$logshare, d$nchar))`.
+However, as it happens with the number of posts, we do not expect the
+relationship between number of characters and logarithm of share count to be
+linear. Posts with too short messages will not elicit users attention. The
+message must say something about what is being shared to trigger users
+interest in looking further at the post and eventually sharing it. However, a
+message cannot be too long either because users will give up the reading just
+by looking to its length and estimating how much time would be spent reading
+it. Since we do not have any theory that could tell us what would be the ideal
+post length, we tried to find it empirically. As Table 3 shows, the number of
+characters of post messages with the highest correlation with the logarithm of
+share count is around 700 for videos and photos. For links, it is around
+5,000.
+
+```{r findNcharCurve, cache=TRUE}
+BuildRow <- function(v)
+{
+    x <- v - d$nchar
+    x[x > 0] <-  -1 * x[x > 0]
+    c(sprintf("%0.3f", cor(d$logshare[d$type == "video"], x[d$type == "video"])),
+      sprintf("%0.3f", cor(d$logshare[d$type == "photo"], x[d$type == "photo"])),
+      sprintf("%0.3f", cor(d$logshare[d$type == "link"],  x[d$type == "link"])))
+}
+
+tab <- rbind(c("N. char 100",   BuildRow(100)),
+             c("N. char 200",   BuildRow(200)),
+             c("N. char 300",   BuildRow(300)),
+             c("N. char 400",   BuildRow(400)),
+             c("N. char 500",   BuildRow(500)),
+             c("N. char 600",   BuildRow(600)),
+             c("N. char 700",   BuildRow(700)),
+             c("N. char 800",   BuildRow(800)),
+             c("N. char 900",   BuildRow(900)),
+             c("N. char 1000",  BuildRow(1000)),
+             c("N. char 3000",  BuildRow(3000)),
+             c("N. char 5000",  BuildRow(5000)),
+             c("N. char 7000",  BuildRow(7000)),
+             c("N. char 10000", BuildRow(10000)))
+
+colnames(tab) <- c("Ideal number", "Video", "Photo", "Link")
+kable(tab, align = "lrrr",
+      caption = "Correlation between logarithm of share count and different measures of the ideal number of characters")
+rm(tab, BuildRow)
+
+d$nchar5000 <- 5000 - d$nchar
+d$nchar5000[d$nchar5000 > 0] <-  -1 * d$nchar5000[d$nchar5000 > 0]
+```
+
+### Page from Western or non Western country
+
+O TEXTO DESTA SEÇÃO SOBRE WESTERN COUNTRIES NÃO É DEFINITIVO.
+VOU AGUARDAR VOCÊS REDIGIREM O TEXTO COMPLETO PARA DECIDIRMOS O QUE FAZER:
+MANTER OU ELIMINAR ESTA VARIÁVEL NA ANÁLISE DOS DADOS.
+
+We expect that posts about Western countries pages will be more frequently
+shared than posts from non Western countries because ... ... ... ... ... ...
+... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ... ...
+Indeed, pages about Western countries differ from pages about non Western
+countries in may aspects. Table 4 shows the average values of some variables
+when their values had already been aggregated by page.
+
+```{r WestMeans, cache=TRUE}
+tmp <- rbind("Log of share count" = tapply(pa$logshare, pa$west, mean),
+             "Log of number of followers" = tapply(pa$logNflwrsI, pa$west, mean),
+             "Log of number of posts" = tapply(pa$lognpost, pa$west, mean),
+             "Regularity of posting" = tapply(pa$npost.reg, pa$west, mean),
+             "Proportion of videos" = tapply(pa$video, pa$west, mean))
+colnames(tmp) <- c("Not West", "West")
+kable(tmp, digits = 2, caption = "Average value of some variables aggregated by page according target public")
+rm(tmp)
+```
+
+The correlation between the logarithm of share count aggregated by page and
+the variable *West* is `r Fmt(cor(pa$west, pa$logshare))` and it is not
+significant (p = `r Fmt(summary(lm(pa$logshare ~ pa$west))$coefficients[2, 4])`).
+
+The correlation between the logarithm of share count (not aggregated) and
+the variable *West* is `r Fmt(cor(d$west == "Yes", d$logshare))` and it is
+significant (p = `r Fmt(summary(lm(d$logshare ~ d$west))$coefficients[2, 4])`).
+
+A CORRELAÇÃO É SIGNIFICATIVA NOS NÍVEIS 1 E 2, MAS TRATA-SE DE UMA VARIÁVEL DE
+NÍVEL 3 E, NESTE CASO, O CERTO É AGREGAR OS DADOS NO NÍVEL 3.
+
+## Native digital pages versus traditional quality newspapers
+
+O TEXTO DESTA SEÇÃO SOBRE NATIVE MEDIA NÃO É DEFINITIVO.
+VOU AGUARDAR VOCÊS REDIGIREM O TEXTO COMPLETO PARA DECIDIRMOS O QUE FAZER:
+MANTER OU ELIMINAR ESTA VARIÁVEL NA ANÁLISE DOS DADOS.
+
+The correlation between the logarithm of share count aggregated by page and
+the variable *Native* is `r Fmt(cor(pa$native, pa$logshare))` and it is not
+significant (p = `r Fmt(summary(lm(pa$logshare ~ pa$native))$coefficients[2, 4])`).
+
+The correlation between the logarithm of share count (not aggregated) and
+the variable *Native* is `r Fmt(cor(d$native == "Yes", d$logshare))` and it is
+significant (p = `r Fmt(summary(lm(d$logshare ~ d$native))$coefficients[2, 4])`).
+
+```{r NativeMeans, cache=TRUE}
+tmp <- rbind("Log of share count" = tapply(pa$logshare, pa$native, mean),
+             "Log of number of followers" = tapply(pa$logNflwrsI, pa$native, mean),
+             "Log of number of posts" = tapply(pa$lognpost, pa$native, mean),
+             "Regularity of posting" = tapply(pa$npost.reg, pa$native, mean),
+             "Proportion of videos" = tapply(pa$video, pa$native, mean))
+colnames(tmp) <- c("Not native", "Native")
+kable(tmp, digits = 2, caption = "Average value of some variables aggregated by page according origin of page")
+rm(tmp)
+```
+
+A CORRELAÇÃO É SIGNIFICATIVA NOS NÍVEIS 1 E 2, MAS TRATA-SE DE UMA VARIÁVEL DE
+NÍVEL 3 E, NESTE CASO, O CERTO É AGREGAR OS DADOS NO NÍVEL 3.
+
+
+## Multilevel regressions
+
+Table 6 shows multilevel regression models with three levels: post,
+fortnight--page and page. Logarithm of share count, number of characters and
+type of post are on level 1; logarithm of number of followers and number of
+posts are on level 2; regularity of posting, cultural zone of page and whether
+the page is native from the Internet or is a traditional newspaper are on
+level 3. In the two models, the variables were rescaled to have mean 0 and
+standard deviation 1. In this way, the coefficients of different variables can
+more easily be compared. We added the *t* statistics between parenthesis, that
+is, the more distant the value is from zero, the more significant is the
+correlation. Model 1 has the logarithm of the number of followers as the
+independent variable of interest and Model 2 has the logarithm of the ratio of
+the number of followers to the number of posts as the independent variable.
+
+```{r hlm, cache=TRUE}
+d$npost440 <- 440 - d$npostA
+d$npost440[!is.na(d$npostA) & d$npost440 > 0] <- -1 * d$npost440[!is.na(d$npostA) & d$npost440 > 0]
+d$lognpost <- log(d$npostA)
+ds <- d[!is.na(d$keyA),
+        c("logshare", "logNflwrsI", "logNflwrPost", "lognpost", "native",
+          "npost.regA", "nchar5000", "west", "type", "keyA", "page.id")]
+ds$page.id <- factor(ds$page.id)
+ds$logshare <- as.numeric(scale(ds$logshare))
+ds$logNflwrsI <- as.numeric(scale(ds$logNflwrsI))
+ds$logNflwrPost <- as.numeric(scale(ds$logNflwrPost))
+ds$lognpost <- as.numeric(scale(ds$lognpost))
+ds$npost.regA <- as.numeric(scale(ds$npost.regA))
+ds$nchar5000 <- as.numeric(scale(ds$nchar5000))
+ds$west <- as.numeric(scale(ds$west == "Yes"))
+ds$native <- as.numeric(scale(ds$native == "Yes"))
+ds$video <- as.numeric(scale(ds$type == "video"))
+ds$link <- as.numeric(scale(ds$type == "link"))
+ds$photo <- as.numeric(scale(ds$type == "photo"))
+ds$type <- NULL
+
+m1 <- lmer(logshare ~ logNflwrsI + lognpost + npost.regA + nchar5000 + photo + video + west + native + (1|keyA) + (1|page.id), data = ds)
+m2 <- lmer(logshare ~ logNflwrPost + npost.regA + nchar5000 + photo + video + west + native + (1|keyA) + (1|page.id), data = ds)
+
+sm1 <- summary(m1)
+sm2 <- summary(m2)
+out <- capture.output(stargazer(m1, m2,
+                                dep.var.labels = "Logarithm of share count",
+                                title = "Multilevel regressions",
+                                notes = " ", notes.label = " ", notes.append = FALSE,
+                                se = list(sm1$coefficients[, 3], sm2$coefficients[, 3]),
+                                t  = list(sm1$coefficients[, 3], sm2$coefficients[, 3])))
+
+SubNames <- function(x)
+{
+    x <- sub("logNflwrsI", "Log of number of followers", x)
+    x <- sub("lognpost", "Log of number of posts", x)
+    x <- sub("logNflwrPost", "Log of NF/NP", x)
+    x <- sub("npost.regA", "Regularity of posting", x)
+    x <- sub("nchar5000", "Number of characters 5000", x)
+    x <- sub("west", "Western country", x)
+    x <- sub("native", "Native media page", x)
+    x <- sub("photo", "Photo", x)
+    x <- sub("video", "Video", x)
+    x
+}
+out <- SubNames(out)
+cat(out, sep = "\n")
+rm(m1, m2, sm1, sm2)
+```
+
+The first thing to note is that the logarithm of the ratio of the number of
+followers to the share count (Model 2) has a larger and more significant
+coefficient than the logarithm of the number of followers. However, its
+explanatory power alone is not as strong as the logarithm of the number of
+followers and the logarithm of the number of posts combined in Model 1: the
+logarithm of the number of posts has a higher *t* statistics than the
+logarithm of NF/NP, and, taken together, the coefficients of the logarithm of
+the number of followers and the logarithm of the number of posts explain more
+of the variation of the dependent variable than the logarithm of NF/NP.
+
+The regularity of posting, the number of characters of post messages being
+close to 5000, and video posts (when compared to links) increase the chances of
+a post being shared while photos decrease the chances.
+
+It is also worth noting that the page being about Western countries is not
+significant when controlled by the other independent variables (the *t*
+statistics is < 2). The presence of the logarithm of the number of followers
+and the logarithm of the number posts in the model increases the significance
+of West, but the presence of the variables post regularity and video decreases
+it. That is, posts from pages about Western countries are more widely shared
+because these pages post more videos and post more regularly.
+
+```{r WestExplained, cache=TRUE, eval=FALSE}
+summary(lmer(logshare ~ west + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ lognpost + logNflwrsI + west + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ lognpost + logNflwrsI + npost.regA + west + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ lognpost + logNflwrsI + npost.regA + video + west + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ west + npost.regA + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ west + video + (1|keyA) + (1|page.id), data = ds))
+```
+
+*Native* is never significant, regardless of what variables are either
+inserted or removed from the regression models.
+
+
+```{r NativeExplained, cache=TRUE, eval=FALSE}
+summary(lmer(logshare ~ native + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ lognpost + logNflwrsI + native + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ lognpost + logNflwrsI + npost.regA + native + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ lognpost + logNflwrsI + npost.regA + video + native + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ native + npost.regA + (1|keyA) + (1|page.id), data = ds))
+summary(lmer(logshare ~ native + video + (1|keyA) + (1|page.id), data = ds))
+```
+
+## Discussion
+
+The dataset assembled for this research is original considering that scholar
+literature has not tested structural sharing factors of news organizations
+throughout multiple continents and cultural regions. The analysis of this data
+sample reveals through correlations, and multilevel regressions models that a
+regular news posting has a higher probability of being shared if it is a
+video, its message has about 700 characters, and its page posts regularly, do
+not post excessively, and has a high number of followers. An irregular news
+posting whose units are predominantly made of photos leads to a robust
+decrease of news sharing per post and, consequently, diminishes the efficiency
+of the news fan page in attracting more followers. We make sense of this
+results by discussing how this might reflect the Facebook’s algorithm, and, to
+some extent, collective attention economy. In the remainder of the paper we
+suggest procedures that might overcome some limitations of our data and
+indicate how further research could test the validity of our findings by
+gathering a more extensive and diverse sample. Finally, we argue how content
+analysis of news factors might refine the current understanding about which
+kind of content is associated to popular news in Facebook.
+
+\clearpage
+
+## APPENDIX
+
+
+```{r appendix, cache=TRUE}
+tmp1 <- data.frame("Page" = tapply(d$page.name, d$page.name, function(x) as.character(x[1])),
+                   "Country/Region" = tapply(d$country, d$page.name, function(x) as.character(x[1])),
+                   "Share" = tapply(d$shares_count_fb, d$page.name, mean))
+tmp2 <- tapply(a$nflwrsI, a$page.name, mean)
+tmp2 <- data.frame("Page" = names(tmp2), "Followers" = tmp2)
+app <- merge(tmp1, tmp2)
+app$Share <- format(app$Share, digits = 2, big.mark = ",")
+app$Followers <- format(app$Followers, digits = 6, big.mark = ",")
+kable(app, align = "llrr", caption = "Pages' country/region of coverage, average share count and average number of followers")
+```
+
